@@ -52,3 +52,11 @@ async def get_item(item_id: int) -> Item:
 @app.get("/items", response_model=list[Item])
 async def list_items() -> list[Item]:
     return list(app.state.items.values())
+
+
+@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(item_id: int) -> None:
+    if item_id not in app.state.items:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    del app.state.items[item_id]

@@ -29,7 +29,7 @@ pytest
 
 ### Codex-assisted test fixing (GitHub Actions)
 - Workflow: `.github/workflows/test-and-codex.yml` runs **only** via manual dispatch from GitHub Actions. Click **Actions → Tests and Codex Auto-Fix → Run workflow**, pick the branch/ref, and set input `run_codex=true` to allow Codex to edit.
-- Behavior: runs `pytest`; if failures and `run_codex` is true, invokes `openai/codex-action@v1` with prompt `.github/codex/prompts/fix-tests.md`, reruns tests, uploads `codex-fix.patch` and `codex-output.md`, and commits/pushes fixes back to the branch when the rerun passes.
+- Behavior: runs `pytest`; if failures and `run_codex` is true, invokes `openai/codex-action@v1` (sandboxed to workspace-write, full-auto) with prompt `.github/codex/prompts/fix-tests.md`, reruns tests, uploads `codex-fix.patch` and `codex-output.md`, and commits/pushes fixes back to the branch when the rerun passes.
 - Secrets: add `OPENAI_API_KEY` in repository secrets. Without a token, the Codex step is skipped and the workflow fails to surface the test failure.
 
 ### Linting and Formatting

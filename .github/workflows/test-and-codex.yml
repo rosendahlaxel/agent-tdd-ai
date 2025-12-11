@@ -58,7 +58,8 @@ jobs:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: .github/codex/prompts/fix-tests.md
           output-file: codex-output.md
-          codex-args: --full-auto --sandbox workspace-write
+          sandbox: workspace-write
+          codex-args: --full-auto
 
       - name: Re-run tests after Codex fix
         id: pytest_after_codex

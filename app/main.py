@@ -1,0 +1,54 @@
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, field_validator
+from pydantic_core import PydanticCustomError
+
+app = FastAPI()
+
+
+class ItemCreate(BaseModel):
+    name: str
+
+    @field_validator("name")
+    @classmethod
+    def name_min_length(cls, value: str) -> str:
+        if len(value.strip()) < 3:
+            raise PydanticCustomError("name_too_short", "Name must be at least 3 characters long")
+        return value
+
+
+class Item(ItemCreate):
+    id: int
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+def reset_state() -> None:
+    app.state.items: dict[int, Item] = {}
+    app.state.next_id = 1
+
+
+reset_state()
+
+
+@app.post("/items", response_model=Item, status_code=status.HTTP_201_CREATED)
+async def create_item(item: ItemCreate) -> Item:
+    item_id = app.state.next_id
+    app.state.next_id += 1
+    stored = Item(id=item_id, name=item.name)
+    app.state.items[item_id] = stored
+    return stored
+
+
+@app.get("/items/{item_id}", response_model=Item)
+async def get_item(item_id: int) -> Item:
+    if item_id not in app.state.items:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    return app.state.items[item_id]
+
+
+@app.get("/items", response_model=list[Item])
+async def list_items() -> list[Item]:
+    return list(app.state.items.values())

@@ -51,3 +51,23 @@ def test_list_items_returns_all():
     assert response.status_code == 200
     names = [item["name"] for item in response.json()]
     assert names == ["First", "Second"]
+    
+
+def test_list_items_returns_empty_list():
+    response = client.get("/items")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_delete_item_removes_item():
+    client.post("/items", json={"name": "ToDelete"})
+    response = client.delete("/items/1")
+    assert response.status_code == 204
+    get_response = client.get("/items/1")
+    assert get_response.status_code == 404
+
+
+def test_delete_item_missing_returns_404():
+    response = client.delete("/items/999")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Item not found"}

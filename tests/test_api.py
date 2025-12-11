@@ -51,7 +51,6 @@ def test_list_items_returns_all():
     assert response.status_code == 200
     names = [item["name"] for item in response.json()]
     assert names == ["First", "Second"]
-    
 
 def test_list_items_returns_empty_list():
     response = client.get("/items")

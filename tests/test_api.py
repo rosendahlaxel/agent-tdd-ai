@@ -71,6 +71,11 @@ def test_delete_item_missing_returns_404():
     assert response.status_code == 404
     assert response.json() == {"detail": "Item not found"}
 
+def test_delete_item_missing_is_idempotent():
+    response = client.delete("/items/999")
+    assert response.status_code == 204
+    assert response.text == ""
+
 
 def test_ids_increment_with_multiple_creations():
     first = client.post("/items", json={"name": "One"})
@@ -92,3 +97,34 @@ def test_create_item_trims_whitespace():
     assert response.status_code == 201
     body = response.json()
     assert body["name"] == "Widget"
+
+
+def test_update_item_creates_when_missing():
+    response = client.put("/items/5", json={"name": "Created via update"})
+    assert response.status_code == 201
+    assert response.json() == {"id": 5, "name": "Created via update"}
+
+
+def test_update_item_trims_whitespace():
+    client.post("/items", json={"name": "Needs Trim"})
+    response = client.put("/items/1", json={"name": "   Trimmed Name   "})
+    assert response.status_code == 200
+    assert response.json() == {"id": 1, "name": "Trimmed Name"}
+
+
+def test_create_item_rejects_duplicate_names():
+    client.post("/items", json={"name": "Unique"})
+    response = client.post("/items", json={"name": "Unique"})
+    assert response.status_code == 409
+    assert response.json()["detail"].lower().startswith("name already exists")
+
+
+def test_reset_endpoint_clears_items():
+    client.post("/items", json={"name": "First"})
+    client.post("/items", json={"name": "Second"})
+    reset_response = client.post("/reset")
+    assert reset_response.status_code == 204
+
+    list_response = client.get("/items")
+    assert list_response.status_code == 200
+    assert list_response.json() == []

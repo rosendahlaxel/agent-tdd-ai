@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi",
+    "httpx",
     "uvicorn[standard]",
 ]
 
@@ -29,3 +30,6 @@ lint.ignore = []
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

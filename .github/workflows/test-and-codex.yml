@@ -1,0 +1,112 @@
+name: Tests and Codex Auto-Fix
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_codex:
+        description: "Set to true to run Codex auto-fix (manual trigger)"
+        required: false
+        default: "false"
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+
+jobs:
+  test-and-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect Codex opt-in
+        id: codex_opt
+        run: |
+          run_codex=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            if printf '%s\n' "${{ join(github.event.pull_request.labels.*.name, ' ') }}" | grep -qw "run-codex"; then
+              run_codex=true
+            fi
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.run_codex }}" = "true" ]; then
+              run_codex=true
+            fi
+          fi
+          echo "run_codex=${run_codex}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run tests (baseline)
+        id: pytest
+        run: |
+          set -o pipefail
+          pytest | tee /tmp/pytest.log
+        continue-on-error: true
+
+      - name: Ensure Codex CLI is available
+        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && (env.OPENAI_API_KEY != '' || env.CODEX_API_KEY != '')
+        run: |
+          if command -v codex >/dev/null 2>&1; then
+            echo "Codex CLI already installed."
+          else
+            pip install codex-cli
+          fi
+
+      - name: Codex auto-fix on failure
+        id: codex-fix
+        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && (env.OPENAI_API_KEY != '' || env.CODEX_API_KEY != '')
+        run: ./scripts/codex-fix-tests.sh
+
+      - name: Commit Codex changes
+        if: steps.codex-fix.outcome == 'success' && steps.codex_opt.outputs.run_codex == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet; then
+            echo "No Codex changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: apply Codex auto-fix"
+          git push
+
+      - name: Capture Codex patch
+        if: always()
+        id: codex-patch
+        run: |
+          git diff --patch > codex-fix.patch
+          if [ -s codex-fix.patch ]; then
+            echo "file=codex-fix.patch" >> "$GITHUB_OUTPUT"
+          else
+            rm codex-fix.patch
+          fi
+
+      - name: Upload Codex patch artifact
+        if: steps.codex-patch.outputs.file
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-fix.patch
+          path: ${{ steps.codex-patch.outputs.file }}
+
+      - name: Fail when tests still failing (no Codex run)
+        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex != 'true'
+        run: |
+          echo "Tests failed and Codex auto-fix was not requested (add 'run-codex' label to opt in)." >&2
+          exit 1
+
+      - name: Fail when Codex auto-fix is skipped (missing API key)
+        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && (env.OPENAI_API_KEY == '' && env.CODEX_API_KEY == '')
+        run: |
+          echo "Tests failed but Codex auto-fix did not run (API key missing)." >&2
+          exit 1

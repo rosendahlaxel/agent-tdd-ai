@@ -27,6 +27,19 @@ Visit http://localhost:8000/health to confirm the service is running.
 pytest
 ```
 
+### Codex-assisted test fixing
+Use the helper workflow to rerun tests and let Codex suggest focused fixes without weakening or deleting tests:
+```bash
+make codex-fix
+# or
+./scripts/codex-fix-tests.sh
+```
+The script runs `pytest`, feeds failing output to `codex edit`, and then reruns the suite to verify the proposed changes.
+
+#### Requirements and CI usage
+- Install and authenticate the `codex` CLI locally. It expects an API token (typically via `OPENAI_API_KEY` or `CODEX_API_KEY`).
+- The workflow is designed for local development. Running it in CI is possible but requires securely injecting the API key and allowing Codex to modify files in the workspace. Consider gating it behind a manual/approval step if you wire it into pipelines.
+
 ### Linting and Formatting
 ```bash
 ruff check

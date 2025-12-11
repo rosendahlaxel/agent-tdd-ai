@@ -27,23 +27,10 @@ Visit http://localhost:8000/health to confirm the service is running.
 pytest
 ```
 
-### Codex-assisted test fixing
-Use the helper workflow to rerun tests and let Codex suggest focused fixes without weakening or deleting tests:
-```bash
-make codex-fix
-# or
-./scripts/codex-fix-tests.sh
-```
-The script runs `pytest`, feeds failing output to `codex edit`, and then reruns the suite to verify the proposed changes.
-
-### CI: tests with optional Codex auto-fix
-- Workflow: `.github/workflows/test-and-codex.yml` runs only via manual dispatch from GitHub Actions. Set input `run_codex=true` to opt in. On failing tests, it uses the official `openai/codex-action@v1` with prompt `.github/codex/prompts/fix-tests.md`, uploads `codex-fix.patch` and `codex-output.md`, and commits/pushes fixes back to the checked-out branch when the rerun passes.
+### Codex-assisted test fixing (GitHub Actions)
+- Workflow: `.github/workflows/test-and-codex.yml` runs **only** via manual dispatch from GitHub Actions. Click **Actions → Tests and Codex Auto-Fix → Run workflow**, pick the branch/ref, and set input `run_codex=true` to allow Codex to edit.
+- Behavior: runs `pytest`; if failures and `run_codex` is true, invokes `openai/codex-action@v1` with prompt `.github/codex/prompts/fix-tests.md`, reruns tests, uploads `codex-fix.patch` and `codex-output.md`, and commits/pushes fixes back to the branch when the rerun passes.
 - Secrets: add `OPENAI_API_KEY` in repository secrets. Without a token, the Codex step is skipped and the workflow fails to surface the test failure.
-- Artifacts: the workflow uploads Codex’s final message (`codex-output.md`) and the patch (`codex-fix.patch`) for review.
-
-#### Requirements and CI usage
-- For local runs, install and authenticate the `codex` CLI (expects `OPENAI_API_KEY` or `CODEX_API_KEY`).
-- For CI, store `OPENAI_API_KEY` as a repository secret; the workflow uses the official Codex GitHub Action and only runs when dispatched manually with `run_codex=true`.
 
 ### Linting and Formatting
 ```bash

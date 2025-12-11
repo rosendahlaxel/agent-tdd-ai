@@ -36,6 +36,11 @@ reset_state()
 
 @app.post("/items", response_model=Item, status_code=status.HTTP_201_CREATED)
 async def create_item(item: ItemCreate) -> Item:
+    if any(stored.name == item.name for stored in app.state.items.values()):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Name already exists"
+        )
+
     item_id = app.state.next_id
     app.state.next_id += 1
     stored = Item(id=item_id, name=item.name)
@@ -57,17 +62,24 @@ async def list_items() -> list[Item]:
 
 @app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(item_id: int) -> Response:
-    if item_id not in app.state.items:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
-    del app.state.items[item_id]
+    if item_id in app.state.items:
+        del app.state.items[item_id]
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.put("/items/{item_id}", response_model=Item)
 async def update_item(item_id: int, item: ItemCreate) -> Item:
+    status_code = status.HTTP_200_OK
     if item_id not in app.state.items:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+        status_code = status.HTTP_201_CREATED
+        app.state.next_id = max(app.state.next_id, item_id + 1)
 
     updated = Item(id=item_id, name=item.name)
     app.state.items[item_id] = updated
-    return updated
+    return Response(content=updated.model_dump_json(), media_type="application/json", status_code=status_code)
+
+
+@app.post("/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset() -> Response:
+    reset_state()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

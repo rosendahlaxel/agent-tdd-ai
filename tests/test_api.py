@@ -66,10 +66,10 @@ def test_delete_item_removes_item():
     assert get_response.status_code == 404
 
 
-def test_delete_item_missing_returns_404():
+def test_delete_item_missing_returns_no_content():
     response = client.delete("/items/999")
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Item not found"}
+    assert response.status_code == 204
+    assert response.text == ""
 
 def test_delete_item_missing_is_idempotent():
     response = client.delete("/items/999")

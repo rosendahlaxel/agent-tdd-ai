@@ -61,3 +61,13 @@ async def delete_item(item_id: int) -> Response:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
     del app.state.items[item_id]
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.put("/items/{item_id}", response_model=Item)
+async def update_item(item_id: int, item: ItemCreate) -> Item:
+    if item_id not in app.state.items:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    updated = Item(id=item_id, name=item.name)
+    app.state.items[item_id] = updated
+    return updated

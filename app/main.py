@@ -11,7 +11,8 @@ class ItemCreate(BaseModel):
     @field_validator("name")
     @classmethod
     def name_min_length(cls, value: str) -> str:
-        if len(value.strip()) < 3:
+        value = value.strip()
+        if len(value) < 3:
             raise PydanticCustomError("name_too_short", "Name must be at least 3 characters long")
         return value
 

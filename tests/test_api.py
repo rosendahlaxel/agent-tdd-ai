@@ -71,6 +71,22 @@ def test_delete_item_missing_returns_404():
     assert response.status_code == 404
     assert response.json() == {"detail": "Item not found"}
 
+
+def test_ids_increment_with_multiple_creations():
+    first = client.post("/items", json={"name": "One"})
+    second = client.post("/items", json={"name": "Two"})
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] == 1
+    assert second.json()["id"] == 2
+
+
+def test_update_item_changes_name():
+    client.post("/items", json={"name": "Original"})
+    response = client.put("/items/1", json={"name": "Updated"})
+    assert response.status_code == 200
+    assert response.json() == {"id": 1, "name": "Updated"}
+
 def test_create_item_trims_whitespace():
     response = client.post("/items", json={"name": "   Widget   "})
     assert response.status_code == 201

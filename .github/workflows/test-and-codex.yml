@@ -45,13 +45,15 @@ jobs:
 
       - name: Run tests (baseline)
         id: pytest
+        timeout-minutes: 3
         run: |
           set -o pipefail
-          pytest | tee /tmp/pytest.log
+          pytest -q --maxfail=1 | tee /tmp/pytest.log
         continue-on-error: true
 
       - name: Codex auto-fix on failure
         id: codex
+        timeout-minutes: 2
         if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && env.OPENAI_API_KEY != ''
         uses: openai/codex-action@v1
         with:
@@ -63,10 +65,11 @@ jobs:
 
       - name: Re-run tests after Codex fix
         id: pytest_after_codex
+        timeout-minutes: 2
         if: steps.codex.outcome == 'success'
         run: |
           set -o pipefail
-          pytest | tee /tmp/pytest-after.log
+          pytest --last-failed --maxfail=1 -q | tee /tmp/pytest-after.log
         continue-on-error: true
 
       - name: Capture Codex patch

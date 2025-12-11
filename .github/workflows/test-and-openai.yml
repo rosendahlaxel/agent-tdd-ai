@@ -1,0 +1,143 @@
+name: Tests and OpenAI Auto-Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_openai:
+        description: "Set to true to run OpenAI auto-fix"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_PYTHON_VERSION_WARNING: "1"
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+jobs:
+  test-and-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-3.12-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-3.12-
+
+      - name: Detect OpenAI opt-in
+        id: openai_opt
+        run: |
+          run_openai="${{ inputs.run_openai }}"
+          if [ "${run_openai}" = "true" ]; then
+            echo "run_openai=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_openai=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e '.[dev]'
+
+      - name: Run tests (baseline)
+        id: pytest
+        timeout-minutes: 3
+        run: |
+          set -o pipefail
+          pytest -q --maxfail=1 | tee /tmp/pytest.log
+        continue-on-error: true
+
+      - name: OpenAI auto-fix on failure
+        id: openai
+        timeout-minutes: 3
+        if: steps.pytest.outcome == 'failure' && steps.openai_opt.outputs.run_openai == 'true' && env.OPENAI_API_KEY != ''
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/fix-tests.md
+          output-file: openai-output.md
+          sandbox: workspace-write
+          model: gpt-5.1
+          effort: low
+          codex-args: --full-auto
+
+      - name: Re-run tests after OpenAI fix
+        id: pytest_after_openai
+        timeout-minutes: 2
+        if: steps.openai.outcome == 'success'
+        run: |
+          set -o pipefail
+          pytest --last-failed --maxfail=1 -q | tee /tmp/pytest-after.log
+        continue-on-error: true
+
+      - name: Capture OpenAI patch
+        if: steps.pytest.outcome == 'failure' || steps.openai.outcome == 'success'
+        id: openai-patch
+        run: |
+          git diff --patch > openai-fix.patch
+          if [ -s openai-fix.patch ]; then
+            echo "file=openai-fix.patch" >> "$GITHUB_OUTPUT"
+          else
+            rm -f openai-fix.patch
+          fi
+
+      - name: Upload OpenAI patch artifact
+        if: steps.openai-patch.outputs.file
+        uses: actions/upload-artifact@v4
+        with:
+          name: openai-fix.patch
+          path: ${{ steps.openai-patch.outputs.file }}
+
+      - name: Upload OpenAI output
+        if: steps.openai.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openai-output
+          path: openai-output.md
+
+      - name: Commit OpenAI changes
+        if: steps.openai.outcome == 'success' && steps.pytest_after_openai.outcome == 'success' && steps.openai_opt.outputs.run_openai == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet; then
+            echo "No OpenAI changes to commit."
+            exit 0
+          fi
+          # Avoid committing artifacts uploaded in prior steps.
+          rm -f openai-fix.patch openai-output.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: apply OpenAI auto-fix"
+          git push
+
+      - name: Fail when tests still failing (no OpenAI run)
+        if: steps.pytest.outcome == 'failure' && steps.openai_opt.outputs.run_openai != 'true'
+        run: |
+          echo "Tests failed and OpenAI auto-fix was not requested (set run_openai=true when dispatching the workflow)." >&2
+          exit 1
+
+      - name: Fail when OpenAI auto-fix is skipped (missing API key)
+        if: steps.pytest.outcome == 'failure' && steps.openai_opt.outputs.run_openai == 'true' && env.OPENAI_API_KEY == ''
+        run: |
+          echo "Tests failed but OpenAI auto-fix did not run (API key missing)." >&2
+          exit 1
+
+      - name: Fail when tests still failing after OpenAI
+        if: steps.openai.outcome == 'success' && steps.pytest_after_openai.outcome != 'success'
+        run: |
+          echo "Tests are still failing after OpenAI auto-fix." >&2
+          exit 1

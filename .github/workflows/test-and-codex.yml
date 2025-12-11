@@ -1,19 +1,20 @@
 name: Tests and Codex Auto-Fix
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       run_codex:
-        description: "Set to true to run Codex auto-fix (manual trigger)"
+        description: "Set to true to run Codex auto-fix"
         required: false
         default: "false"
+
+permissions:
+  contents: write
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIP_NO_PYTHON_VERSION_WARNING: "1"
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
 
 jobs:
   test-and-fix:
@@ -21,21 +22,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Detect Codex opt-in
         id: codex_opt
         run: |
-          run_codex=false
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            if printf '%s\n' "${{ join(github.event.pull_request.labels.*.name, ' ') }}" | grep -qw "run-codex"; then
-              run_codex=true
-            fi
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ inputs.run_codex }}" = "true" ]; then
-              run_codex=true
-            fi
+          run_codex="${{ inputs.run_codex }}"
+          if [ "${run_codex}" = "true" ]; then
+            echo "run_codex=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_codex=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "run_codex=${run_codex}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -52,44 +50,33 @@ jobs:
           pytest | tee /tmp/pytest.log
         continue-on-error: true
 
-      - name: Ensure Codex CLI is available
-        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && (env.OPENAI_API_KEY != '' || env.CODEX_API_KEY != '')
-        run: |
-          if command -v codex >/dev/null 2>&1; then
-            echo "Codex CLI already installed."
-          else
-            pip install codex-cli
-          fi
-
       - name: Codex auto-fix on failure
-        id: codex-fix
-        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && (env.OPENAI_API_KEY != '' || env.CODEX_API_KEY != '')
-        run: ./scripts/codex-fix-tests.sh
+        id: codex
+        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && env.OPENAI_API_KEY != ''
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/fix-tests.md
+          output-file: codex-output.md
+          codex-args: --full-auto --sandbox workspace-write
 
-      - name: Commit Codex changes
-        if: steps.codex-fix.outcome == 'success' && steps.codex_opt.outputs.run_codex == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Re-run tests after Codex fix
+        id: pytest_after_codex
+        if: steps.codex.outcome == 'success'
         run: |
-          if git diff --quiet; then
-            echo "No Codex changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "chore: apply Codex auto-fix"
-          git push
+          set -o pipefail
+          pytest | tee /tmp/pytest-after.log
+        continue-on-error: true
 
       - name: Capture Codex patch
-        if: always()
+        if: steps.pytest.outcome == 'failure' || steps.codex.outcome == 'success'
         id: codex-patch
         run: |
           git diff --patch > codex-fix.patch
           if [ -s codex-fix.patch ]; then
             echo "file=codex-fix.patch" >> "$GITHUB_OUTPUT"
           else
-            rm codex-fix.patch
+            rm -f codex-fix.patch
           fi
 
       - name: Upload Codex patch artifact
@@ -99,14 +86,44 @@ jobs:
           name: codex-fix.patch
           path: ${{ steps.codex-patch.outputs.file }}
 
+      - name: Upload Codex output
+        if: steps.codex.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-output
+          path: codex-output.md
+
+      - name: Commit Codex changes
+        if: steps.codex.outcome == 'success' && steps.pytest_after_codex.outcome == 'success' && steps.codex_opt.outputs.run_codex == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet; then
+            echo "No Codex changes to commit."
+            exit 0
+          fi
+          # Avoid committing artifacts uploaded in prior steps.
+          rm -f codex-fix.patch codex-output.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: apply Codex auto-fix"
+          git push
+
       - name: Fail when tests still failing (no Codex run)
         if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex != 'true'
         run: |
-          echo "Tests failed and Codex auto-fix was not requested (add 'run-codex' label to opt in)." >&2
+          echo "Tests failed and Codex auto-fix was not requested (set run_codex=true when dispatching the workflow)." >&2
           exit 1
 
       - name: Fail when Codex auto-fix is skipped (missing API key)
-        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && (env.OPENAI_API_KEY == '' && env.CODEX_API_KEY == '')
+        if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && env.OPENAI_API_KEY == ''
         run: |
           echo "Tests failed but Codex auto-fix did not run (API key missing)." >&2
+          exit 1
+
+      - name: Fail when tests still failing after Codex
+        if: steps.codex.outcome == 'success' && steps.pytest_after_codex.outcome != 'success'
+        run: |
+          echo "Tests are still failing after Codex auto-fix." >&2
           exit 1

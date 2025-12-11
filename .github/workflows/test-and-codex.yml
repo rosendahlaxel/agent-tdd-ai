@@ -61,7 +61,7 @@ jobs:
           prompt-file: .github/codex/prompts/fix-tests.md
           output-file: codex-output.md
           sandbox: workspace-write
-          model: gpt-5.1-mini
+          model: gpt-5.1-codex-mini
           effort: low
           codex-args: --full-auto
 

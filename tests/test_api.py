@@ -58,14 +58,6 @@ def test_list_items_returns_empty_list():
     assert response.json() == []
 
 
-def test_delete_item_removes_item():
-    client.post("/items", json={"name": "ToDelete"})
-    response = client.delete("/items/1")
-    assert response.status_code == 204
-    get_response = client.get("/items/1")
-    assert get_response.status_code == 404
-
-
 def test_delete_item_missing_returns_no_content():
     response = client.delete("/items/999")
     assert response.status_code == 204
@@ -128,3 +120,10 @@ def test_reset_endpoint_clears_items():
     list_response = client.get("/items")
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+def test_delete_item_removes_item():
+    client.post("/items", json={"name": "ToDelete"})
+    response = client.delete("/items/1")
+    assert response.status_code == 204
+    get_response = client.get("/items/1")
+    assert get_response.status_code == 404

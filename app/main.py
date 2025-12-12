@@ -68,15 +68,21 @@ async def delete_item(item_id: int) -> Response:
 
 
 @app.put("/items/{item_id}", response_model=Item)
-async def update_item(item_id: int, item: ItemCreate) -> Item:
-    status_code = status.HTTP_200_OK
+async def update_item(item_id: int, item: ItemCreate, response: Response) -> Item:
+    for existing_id, stored in app.state.items.items():
+        if existing_id != item_id and stored.name == item.name:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Name already exists"
+            )
+
+    response.status_code = status.HTTP_200_OK
     if item_id not in app.state.items:
-        status_code = status.HTTP_201_CREATED
+        response.status_code = status.HTTP_201_CREATED
         app.state.next_id = max(app.state.next_id, item_id + 1)
 
     updated = Item(id=item_id, name=item.name)
     app.state.items[item_id] = updated
-    return Response(content=updated.model_dump_json(), media_type="application/json", status_code=status_code)
+    return updated
 
 
 @app.post("/reset", status_code=status.HTTP_204_NO_CONTENT)

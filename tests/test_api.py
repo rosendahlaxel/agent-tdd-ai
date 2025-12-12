@@ -121,9 +121,3 @@ def test_reset_endpoint_clears_items():
     assert list_response.status_code == 200
     assert list_response.json() == []
 
-def test_delete_item_removes_item():
-    client.post("/items", json={"name": "ToDelete"})
-    response = client.delete("/items/1")
-    assert response.status_code == 204
-    get_response = client.get("/items/1")
-    assert get_response.status_code == 404

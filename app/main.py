@@ -59,14 +59,6 @@ async def get_item(item_id: int) -> Item:
 async def list_items() -> list[Item]:
     return list(app.state.items.values())
 
-
-@app.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_item(item_id: int) -> Response:
-    if item_id in app.state.items:
-        del app.state.items[item_id]
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 @app.put("/items/{item_id}", response_model=Item)
 async def update_item(item_id: int, item: ItemCreate, response: Response) -> Item:
     for existing_id, stored in app.state.items.items():

@@ -52,6 +52,7 @@ def test_list_items_returns_all():
     names = [item["name"] for item in response.json()]
     assert names == ["First", "Second"]
 
+
 def test_list_items_returns_empty_list():
     response = client.get("/items")
     assert response.status_code == 200
@@ -70,6 +71,7 @@ def test_delete_item_missing_returns_no_content():
     response = client.delete("/items/999")
     assert response.status_code == 204
     assert response.text == ""
+
 
 def test_delete_item_missing_is_idempotent():
     response = client.delete("/items/999")
@@ -91,6 +93,7 @@ def test_update_item_changes_name():
     response = client.put("/items/1", json={"name": "Updated"})
     assert response.status_code == 200
     assert response.json() == {"id": 1, "name": "Updated"}
+
 
 def test_create_item_trims_whitespace():
     response = client.post("/items", json={"name": "   Widget   "})
@@ -128,3 +131,39 @@ def test_reset_endpoint_clears_items():
     list_response = client.get("/items")
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+
+def test_events_endpoint_records_mutations():
+    client.post("/items", json={"name": "One"})
+    client.put("/items/1", json={"name": "Uno"})
+    client.delete("/items/1")
+
+    events = client.get("/events").json()
+    assert [e["id"] for e in events] == [1, 2, 3]
+    assert [e["type"] for e in events] == ["item_created", "item_updated", "item_deleted"]
+
+
+def test_time_travel_queries_return_state_as_of_event_id():
+    client.post("/items", json={"name": "One"})  # event 1
+    client.put("/items/1", json={"name": "Uno"})  # event 2
+    client.delete("/items/1")  # event 3
+
+    at_1 = client.get("/items", params={"at": 1})
+    assert at_1.status_code == 200
+    assert at_1.json() == [{"id": 1, "name": "One"}]
+
+    at_2 = client.get("/items/1", params={"at": 2})
+    assert at_2.status_code == 200
+    assert at_2.json() == {"id": 1, "name": "Uno"}
+
+    at_3 = client.get("/items/1", params={"at": 3})
+    assert at_3.status_code == 404
+
+
+def test_item_history_returns_events_for_item():
+    client.post("/items", json={"name": "One"})
+    client.put("/items/1", json={"name": "Uno"})
+    client.delete("/items/1")
+
+    history = client.get("/items/1/history").json()
+    assert [e["type"] for e in history] == ["item_created", "item_updated", "item_deleted"]

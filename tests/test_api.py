@@ -92,6 +92,14 @@ def test_update_item_changes_name():
     assert response.status_code == 200
     assert response.json() == {"id": 1, "name": "Updated"}
 
+
+def test_items_count_endpoint_returns_total():
+    client.post("/items", json={"name": "First"})
+    client.post("/items", json={"name": "Second"})
+    response = client.get("/items/count")
+    assert response.status_code == 200
+    assert response.json() == {"count": 2}
+
 def test_create_item_trims_whitespace():
     response = client.post("/items", json={"name": "   Widget   "})
     assert response.status_code == 201

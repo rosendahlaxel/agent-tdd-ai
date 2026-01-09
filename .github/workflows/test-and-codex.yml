@@ -61,7 +61,7 @@ jobs:
 
       - name: Codex auto-fix on failure
         id: codex
-        timeout-minutes: 3
+        timeout-minutes: 2
         if: steps.pytest.outcome == 'failure' && steps.codex_opt.outputs.run_codex == 'true' && env.OPENAI_API_KEY != ''
         uses: openai/codex-action@v1
         with:
@@ -71,12 +71,12 @@ jobs:
           sandbox: workspace-write
           model: gpt-5.1-codex-mini
           effort: low
-          codex-args: --full-auto
+          #codex-args: --full-auto
 
       - name: Re-run tests after Codex fix
         id: pytest_after_codex
         timeout-minutes: 2
-        if: steps.codex.outcome == 'success'
+        if: steps.codex.outcome == 'success' && steps.codex-patch.outputs.file
         run: |
           set -o pipefail
           pytest --last-failed --maxfail=1 -q | tee /tmp/pytest-after.log

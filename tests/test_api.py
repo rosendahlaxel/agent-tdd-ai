@@ -31,6 +31,13 @@ def test_create_item_returns_created_item():
     assert body["id"] == 1
 
 
+def test_create_item_trims_whitespace():
+    response = client.post("/items", json={"name": "   Widget   "})
+    assert response.status_code == 201
+    body = response.json()
+    assert body["name"] == "Widget"
+
+
 def test_get_item_by_id_returns_item():
     client.post("/items", json={"name": "Gadget"})
     response = client.get("/items/1")
